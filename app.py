@@ -58,13 +58,12 @@ try:
 except Exception:
     pass  # no secrets.toml / Cloud secrets configured — fine when running locally with just .env
 
-st.set_page_config(page_title="Brand Voice Content Agent", page_icon="✍️", layout="wide")
+st.set_page_config(page_title="Better Voice", page_icon="✍️", layout="wide")
 
-st.title("✍️ Brand Voice Content Agent")
+st.title("✍️ Better Voice")
 st.caption(
     "A small LangGraph agent that outlines, drafts, self-critiques, and revises "
-    "content before producing tone variants — built as a hands-on exploration "
-    "of the kind of AI content workflow Writesonic's product is built around."
+    "content producing multiple tone variants."
 )
 
 # --- Sidebar: config ---
@@ -88,6 +87,7 @@ with st.sidebar:
     # So: if a key is already configured (local .env, or Streamlit Cloud
     # secrets), just say so and leave the field blank; typing something
     # only overrides it for this browser session, never displayed back.
+    
     key_env_var = "GOOGLE_API_KEY" if provider == "gemini" else "GROQ_API_KEY"
     key_label = "Google (Gemini)" if provider == "gemini" else "Groq"
     key_url = "aistudio.google.com/apikey" if provider == "gemini" else "console.groq.com"
