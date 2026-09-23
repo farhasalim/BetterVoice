@@ -53,5 +53,3 @@ Steps:
 3. Run the Streamlit app:
 
    streamlit run app.py
-
-This runs a deliberately vague sample brief through the full pipeline and prints the trace, final draft, and variants — useful for confirming the critique/revise loop actually triggers a revision, not just always passing on the first draft.
