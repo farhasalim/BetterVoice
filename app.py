@@ -1,5 +1,5 @@
 """
-Streamlit UI for the Brand Voice Content Agent.
+Streamlit UI for the Better Voice Agent.
 
 Run with: streamlit run app.py
 Requires a GROQ_API_KEY in a .env file (see .env.example) or entered in the
@@ -7,6 +7,7 @@ sidebar at runtime.
 """
 
 import os
+from datetime import date
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -14,6 +15,37 @@ from dotenv import load_dotenv
 from graph import build_graph
 
 load_dotenv()
+
+# --- Usage caps ---
+# Two layers, both intentionally simple (no database):
+#   1. SESSION_LIMIT — stops one visitor from looping generations endlessly
+#      in a single browser session (st.session_state, per-visitor).
+#   2. DAILY_LIMIT — a shared cap across ALL visitors to this running app
+#      instance, so a demo getting shared around doesn't blow through your
+#      free-tier API quota for the day. st.cache_resource gives every
+#      visitor's session a reference to the SAME dict, which is exactly
+#      what a shared counter needs. It resets whenever the app restarts/
+#      redeploys (normal on Streamlit Community Cloud) — that's fine for a
+#      lightweight safeguard, not a hard guarantee.
+SESSION_LIMIT = 5
+DAILY_LIMIT = 25
+
+
+@st.cache_resource
+def _usage_counter():
+    return {"date": None, "count": 0}
+
+
+def _daily_limit_ok() -> bool:
+    counter = _usage_counter()
+    today = date.today().isoformat()
+    if counter["date"] != today:
+        counter["date"] = today
+        counter["count"] = 0
+    if counter["count"] >= DAILY_LIMIT:
+        return False
+    counter["count"] += 1
+    return True
 
 # On Streamlit Community Cloud, secrets are set in the app's dashboard
 # ("Secrets" section, TOML format) and read via st.secrets rather than a
@@ -49,26 +81,28 @@ with st.sidebar:
     provider = provider_label.lower()
     os.environ["LLM_PROVIDER"] = provider
 
-    if provider == "gemini":
-        env_key = os.environ.get("GOOGLE_API_KEY", "")
-        api_key_input = st.text_input(
-            "Google (Gemini) API key",
-            value=env_key,
-            type="password",
-            help="Free key from aistudio.google.com/apikey. Only stored for this session.",
-        )
-        if api_key_input:
-            os.environ["GOOGLE_API_KEY"] = api_key_input
-    else:
-        env_key = os.environ.get("GROQ_API_KEY", "")
-        api_key_input = st.text_input(
-            "Groq API key",
-            value=env_key,
-            type="password",
-            help="Free key from console.groq.com. Only stored for this session.",
-        )
-        if api_key_input:
-            os.environ["GROQ_API_KEY"] = api_key_input
+    # IMPORTANT: never pass an existing secret as `value=` to a text_input,
+    # even one with type="password". Password-type inputs only mask what's
+    # displayed on screen — the value is still written into the page's raw
+    # HTML, visible to anyone via "View Page Source" or browser dev tools.
+    # So: if a key is already configured (local .env, or Streamlit Cloud
+    # secrets), just say so and leave the field blank; typing something
+    # only overrides it for this browser session, never displayed back.
+    key_env_var = "GOOGLE_API_KEY" if provider == "gemini" else "GROQ_API_KEY"
+    key_label = "Google (Gemini)" if provider == "gemini" else "Groq"
+    key_url = "aistudio.google.com/apikey" if provider == "gemini" else "console.groq.com"
+
+    configured_key = os.environ.get(key_env_var, "")
+    if configured_key:
+        st.success(f"{key_label} API key loaded from configured secrets.")
+    api_key_input = st.text_input(
+        f"{key_label} API key" + (" (override, optional)" if configured_key else ""),
+        value="",
+        type="password",
+        help=f"Free key from {key_url}. Never pre-filled, never displayed — only kept in memory for this session.",
+    )
+    if api_key_input:
+        os.environ[key_env_var] = api_key_input
 
     max_revisions = st.slider("Max self-revision rounds", min_value=0, max_value=3, value=2)
 
@@ -124,7 +158,19 @@ if run:
         st.error("Content brief is required.")
     elif not tone.strip():
         st.error("Target tone / audience is required.")
+    elif st.session_state.get("session_run_count", 0) >= SESSION_LIMIT:
+        st.warning(
+            f"You've reached the demo limit of {SESSION_LIMIT} runs for this session. "
+            "Refresh the page to reset, or clone the repo and run it locally with your own free API key."
+        )
+    elif not _daily_limit_ok():
+        st.warning(
+            "This demo has hit its shared daily limit — keeping the free API tier "
+            "available for everyone who visits. Please check back tomorrow, or clone "
+            "the repo and run it locally with your own free API key."
+        )
     else:
+        st.session_state["session_run_count"] = st.session_state.get("session_run_count", 0) + 1
         graph_app = build_graph()
         initial_state = {
             "brief": brief,
